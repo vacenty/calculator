@@ -72,6 +72,8 @@ impl Calculator {
                 || c == '/'
                 || c == '%'
                 || c == '.'
+                || c == '('
+                || c == ')'
                 || c == '\u{8}'
         }) {
             self.expression = input;
