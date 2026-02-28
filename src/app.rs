@@ -465,7 +465,9 @@ impl Application for CosmicCalculator {
                     return Task::batch(tasks);
                 }
 
-                let outcome = String::from_utf8(output.stdout).unwrap_or_default();
+                let outcome = String::from_utf8(output.stdout)
+                    .unwrap_or_default()
+                    .replace(['\n', '\r'], "");
                 if outcome.is_empty() {
                     tracing::error!("Failed to parse qalc output");
                     tasks.push(self.update(Message::ShowToast(
@@ -474,7 +476,7 @@ impl Application for CosmicCalculator {
                     return Task::batch(tasks);
                 };
 
-                self.calculator.outcome = outcome.to_string();
+                self.calculator.outcome = outcome.clone();
 
                 let mut history = self.config.history.clone();
                 history.push(self.calculator.clone());
@@ -491,7 +493,7 @@ impl Application for CosmicCalculator {
                     .text(self.calculator.expression.clone())
                     .data(self.calculator.clone());
 
-                self.calculator.expression = outcome.to_string();
+                self.calculator.expression = outcome;
             }
             Message::Key(modifiers, key) => {
                 for (key_bind, action) in &self.key_binds {
