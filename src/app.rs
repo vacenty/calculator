@@ -19,6 +19,7 @@ use cosmic::{
         Alignment, Event, Length, Subscription, event,
         keyboard::Event as KeyEvent,
         keyboard::{Key, Modifiers},
+        window,
     },
     theme,
     widget::{
@@ -45,6 +46,7 @@ pub struct CosmicCalculator {
     config: config::CalculatorConfig,
     calculator: Calculator,
     toasts: widget::Toasts<Message>,
+    input_id: widget::Id,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +66,7 @@ pub enum Message {
     Open(String),
     SetDecimalComma(bool),
     Evaluate,
+    Window,
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -178,11 +181,13 @@ impl Application for CosmicCalculator {
             config: flags.config,
             calculator: Calculator::new(),
             toasts: widget::toaster::Toasts::new(Message::CloseToast),
+            input_id: widget::Id::unique(),
         };
 
         let mut tasks = vec![];
 
         tasks.push(app.set_window_title(fl!("app-title")));
+        tasks.push(widget::text_input::focus(app.input_id.clone()));
         tasks.push(Task::perform(
             async move { operations::uses_decimal_comma().await },
             |decimal_comma| cosmic::Action::App(Message::SetDecimalComma(decimal_comma)),
@@ -239,6 +244,7 @@ impl Application for CosmicCalculator {
                 widget::text_input("", &self.calculator.expression)
                     .on_input(Message::Input)
                     .on_submit(|_| Message::Operator(Operator::Equal))
+                    .id(self.input_id.clone())
                     .size(32.0)
                     .width(Length::Fill),
             )
@@ -246,7 +252,7 @@ impl Application for CosmicCalculator {
                 widget::column::with_capacity(6)
                     .push(
                         widget::row::with_capacity(3)
-                            .push(wide_button(
+                            .push(standard_button(
                                 Message::Operator(Operator::Clear),
                                 Length::FillPortion(2),
                             ))
@@ -461,7 +467,9 @@ impl Application for CosmicCalculator {
                     return Task::batch(tasks);
                 }
 
-                let outcome = String::from_utf8(output.stdout).unwrap_or_default();
+                let outcome = String::from_utf8(output.stdout)
+                    .unwrap_or_default()
+                    .replace(['\n', '\r'], "");
                 if outcome.is_empty() {
                     tracing::error!("Failed to parse qalc output");
                     tasks.push(self.update(Message::ShowToast(
@@ -470,7 +478,7 @@ impl Application for CosmicCalculator {
                     return Task::batch(tasks);
                 };
 
-                self.calculator.outcome = outcome.to_string();
+                self.calculator.outcome = outcome.clone();
 
                 let mut history = self.config.history.clone();
                 history.push(self.calculator.clone());
@@ -487,7 +495,7 @@ impl Application for CosmicCalculator {
                     .text(self.calculator.expression.clone())
                     .data(self.calculator.clone());
 
-                self.calculator.expression = outcome.to_string();
+                self.calculator.expression = outcome;
             }
             Message::Key(modifiers, key) => {
                 for (key_bind, action) in &self.key_binds {
@@ -532,6 +540,9 @@ impl Application for CosmicCalculator {
                 }
                 self.nav.clear();
             }
+            Message::Window => {
+                return widget::text_input::focus(self.input_id.clone());
+            }
         }
         Task::batch(tasks)
     }
@@ -563,6 +574,7 @@ impl Application for CosmicCalculator {
                 Event::Keyboard(KeyEvent::ModifiersChanged(modifiers)) => {
                     Some(Message::Modifiers(modifiers))
                 }
+                Event::Window(window::Event::Focused) => Some(Message::Window),
                 _ => None,
             }),
             cosmic_config::config_subscription(
@@ -605,15 +617,6 @@ impl CosmicCalculator {
     fn update_config(&mut self) -> Task<Message> {
         cosmic::command::set_theme(self.config.app_theme.theme())
     }
-}
-
-pub fn wide_button<'a>(message: Message, width: Length) -> Element<'a, Message> {
-    let label = match message.clone() {
-        Message::Number(num) => num.to_string(),
-        Message::Operator(operator) => operator.display().to_string(),
-        _ => String::new(),
-    };
-    button(label, message, theme::Button::Standard, width)
 }
 
 pub fn standard_button<'a>(message: Message, width: Length) -> Element<'a, Message> {
